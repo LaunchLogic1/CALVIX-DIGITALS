@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="blueMainT" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3B82F6" />
+      <stop offset="100%" stop-color="#1D4ED8" />
+    </linearGradient>
+    <linearGradient id="blueRightT" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2563EB" />
+      <stop offset="100%" stop-color="#1E40AF" />
+    </linearGradient>
+    <filter id="glowT" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#2563EB" flood-opacity="0.35" />
+    </filter>
+  </defs>
+
+  <g filter="url(#glowT)">
+    <!-- White C Body -->
+    <path fill="#FFFFFF" d="
+      M 256 68
+      L 418 162
+      L 352 200
+      L 284 160
+      L 174 223
+      L 174 289
+      L 284 352
+      L 256 444
+      L 94 350
+      L 94 162
+      Z
+    " />
+
+    <!-- Bottom-Right Electric Blue Facet -->
+    <path fill="url(#blueRightT)" d="
+      M 284 352
+      L 352 312
+      L 418 350
+      L 256 444
+      Z
+    " />
+
+    <!-- Central Blue Gem / Arrowhead -->
+    <polygon points="214,256 252,224 312,224 284,256 312,288 252,288" fill="url(#blueMainT)" />
+  </g>
+</svg>
