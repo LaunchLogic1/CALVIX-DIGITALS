@@ -3,15 +3,27 @@ import { createClient } from "@supabase/supabase-js";
 const SUPABASE_URL =
   process.env.SUPABASE_URL ||
   process.env.VITE_SUPABASE_URL ||
-  "https://njefeejrbsewcecbekhx.supabase.co";
+  "";
 
 const SUPABASE_KEY =
   process.env.SUPABASE_ANON_KEY ||
   process.env.SUPABASE_PUBLISHABLE_KEY ||
   process.env.VITE_SUPABASE_ANON_KEY ||
-  "sb_publishable_popfAZtxMb_sRU2tDFOBGg_B0gEFZ6J";
+  "";
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+// Safely instantiate client or null if not configured
+let supabaseClient: any = null;
+try {
+  if (SUPABASE_URL && SUPABASE_KEY) {
+    supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY, {
+      auth: { persistSession: false },
+    });
+  }
+} catch (e) {
+  supabaseClient = null;
+}
+
+export const supabase = supabaseClient;
 
 export interface SupabaseBookingRecord {
   id?: string;
@@ -32,9 +44,13 @@ export interface SupabaseBookingRecord {
 
 /**
  * Saves any booking, contact form submission, inquiry, quote request, or newsletter signup
- * directly into the Supabase `bookings` table.
+ * directly into the Supabase `bookings` table if configured.
  */
 export async function saveBookingToSupabase(booking: SupabaseBookingRecord) {
+  if (!supabase) {
+    return { success: true, localOnly: true };
+  }
+
   try {
     const record = {
       full_name: booking.full_name?.trim() || "Anonymous Inquiry",
@@ -51,31 +67,32 @@ export async function saveBookingToSupabase(booking: SupabaseBookingRecord) {
       notes: booking.notes?.trim() || null,
     };
 
-    // Insert into Supabase table without requiring select permissions (works seamlessly with Insert-Only RLS)
     const { error } = await supabase.from("bookings").insert([record]);
 
     if (error) {
-      console.error("Supabase DB Insert Error:", error.message);
       return {
         success: false,
-        error: "Unable to process submission at this moment. Please try again later.",
+        error: error.message,
       };
     }
 
     return { success: true };
   } catch (err: any) {
-    console.error("Supabase Connection Exception:", err);
     return {
       success: false,
-      error: "Connection error. Please check your network and try again.",
+      error: err?.message || "Connection error",
     };
   }
 }
 
 /**
- * Retrieves all bookings from the Supabase `bookings` table.
+ * Retrieves all bookings from the Supabase `bookings` table if available.
  */
 export async function getBookingsFromSupabase() {
+  if (!supabase) {
+    return { success: true, bookings: [] };
+  }
+
   try {
     const { data, error } = await supabase
       .from("bookings")
@@ -83,14 +100,12 @@ export async function getBookingsFromSupabase() {
       .order("created_at", { ascending: false });
 
     if (error) {
-      console.warn("Supabase DB Select Warning:", error.message);
       return { success: false, error: error.message, bookings: [] };
     }
 
     return { success: true, bookings: data || [] };
   } catch (err: any) {
-    console.warn("Supabase Connection Exception on Fetch:", err);
-    return { success: false, error: err.message || "Failed to fetch bookings", bookings: [] };
+    return { success: false, error: err?.message || "Failed to fetch bookings", bookings: [] };
   }
 }
 
