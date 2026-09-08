@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { PortfolioItem, BlogPost } from "../types";
+import { PortfolioItem, BlogPost, BookingItem } from "../types";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const UPLOADS_DIR = path.join(DATA_DIR, "uploads");
@@ -9,6 +9,7 @@ const DB_FILE = path.join(DATA_DIR, "db.json");
 export interface DatabaseSchema {
   projects: PortfolioItem[];
   blogs: BlogPost[];
+  bookings?: BookingItem[];
   adminPasswordHash?: string;
   adminPassword?: string;
 }
@@ -212,6 +213,7 @@ export function readDatabase(): DatabaseSchema {
     const initialDb: DatabaseSchema = {
       projects: DEFAULT_PROJECTS,
       blogs: DEFAULT_BLOG_POSTS,
+      bookings: [],
       adminPassword: "admin123",
     };
     fs.writeFileSync(DB_FILE, JSON.stringify(initialDb, null, 2), "utf-8");
@@ -225,6 +227,7 @@ export function readDatabase(): DatabaseSchema {
     return {
       projects,
       blogs: Array.isArray(parsed.blogs) ? parsed.blogs : DEFAULT_BLOG_POSTS,
+      bookings: Array.isArray(parsed.bookings) ? parsed.bookings : [],
       adminPassword: parsed.adminPassword || "admin123",
     };
   } catch (err) {
@@ -232,6 +235,7 @@ export function readDatabase(): DatabaseSchema {
     return {
       projects: DEFAULT_PROJECTS,
       blogs: DEFAULT_BLOG_POSTS,
+      bookings: [],
       adminPassword: "admin123",
     };
   }
@@ -511,4 +515,78 @@ export function getUploadFilePath(filename: string): string | null {
     return filePath;
   }
   return null;
+}
+
+export function getLocalBookings(): BookingItem[] {
+  const db = readDatabase();
+  return db.bookings || [];
+}
+
+export function saveLocalBooking(booking: Partial<BookingItem>): BookingItem {
+  const db = readDatabase();
+  if (!db.bookings) {
+    db.bookings = [];
+  }
+
+  const now = new Date().toISOString();
+  const id = booking.id || `booking-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+  
+  const newBooking: BookingItem = {
+    id,
+    created_at: booking.created_at || now,
+    createdAt: booking.createdAt || now,
+    full_name: booking.full_name || booking.name || "Anonymous Inquiry",
+    name: booking.full_name || booking.name || "Anonymous Inquiry",
+    email: booking.email || "",
+    phone: booking.phone || undefined,
+    business_name: booking.business_name || booking.businessName || undefined,
+    businessName: booking.business_name || booking.businessName || undefined,
+    service: booking.service || "General Inquiry",
+    message: booking.message || booking.projectDetails || undefined,
+    projectDetails: booking.message || booking.projectDetails || undefined,
+    budget: booking.budget || undefined,
+    project_type: booking.project_type || booking.projectType || undefined,
+    projectType: booking.project_type || booking.projectType || undefined,
+    status: booking.status || "New",
+    source: booking.source || "Website",
+    ip_address: booking.ip_address || undefined,
+    notes: booking.notes || undefined,
+  };
+
+  const existingIndex = db.bookings.findIndex((b) => b.id === id);
+  if (existingIndex >= 0) {
+    db.bookings[existingIndex] = { ...db.bookings[existingIndex], ...newBooking };
+  } else {
+    db.bookings.unshift(newBooking);
+  }
+
+  writeDatabase(db);
+  return newBooking;
+}
+
+export function updateLocalBookingStatus(id: string, status: string, notes?: string): boolean {
+  const db = readDatabase();
+  if (!db.bookings) return false;
+  const index = db.bookings.findIndex((b) => b.id === id);
+  if (index >= 0) {
+    db.bookings[index].status = status;
+    if (notes !== undefined) {
+      db.bookings[index].notes = notes;
+    }
+    writeDatabase(db);
+    return true;
+  }
+  return false;
+}
+
+export function deleteLocalBooking(id: string): boolean {
+  const db = readDatabase();
+  if (!db.bookings) return false;
+  const initialLength = db.bookings.length;
+  db.bookings = db.bookings.filter((b) => b.id !== id);
+  if (db.bookings.length !== initialLength) {
+    writeDatabase(db);
+    return true;
+  }
+  return false;
 }

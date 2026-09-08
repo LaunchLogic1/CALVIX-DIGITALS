@@ -16,6 +16,10 @@ import {
   saveUploadPdf,
   deleteUploadFileByUrl,
   getUploadFilePath,
+  getLocalBookings,
+  saveLocalBooking,
+  updateLocalBookingStatus,
+  deleteLocalBooking,
 } from "./src/server/dbStore";
 import { saveBookingToSupabase, getBookingsFromSupabase } from "./src/lib/supabase";
 
@@ -338,7 +342,7 @@ Sitemap: https://calvix-digitals.ai.studio/sitemap.xml
     res.json({ status: "ok", agency: "Calvix Digitals", timestamp: new Date().toISOString() });
   });
 
-  // API Route: Contact & Consultation Request (Saves directly to Supabase table `bookings`)
+  // API Route: Contact & Consultation Request (Saves to Supabase AND local database)
   app.post("/api/consultation", async (req, res) => {
     const {
       name,
@@ -367,47 +371,135 @@ Sitemap: https://calvix-digitals.ai.studio/sitemap.xml
 
     const clientIp = req.headers["x-forwarded-for"]?.toString() || req.socket.remoteAddress || "";
 
-    const supabaseResult = await saveBookingToSupabase({
+    const bookingPayload = {
       full_name: clientName,
       email: clientEmail,
-      phone: phone?.trim() || null,
-      business_name: (business_name || businessName || "").trim() || null,
+      phone: phone?.trim() || undefined,
+      business_name: (business_name || businessName || "").trim() || undefined,
       service: (service || "General Inquiry").trim(),
-      message: (message || projectDetails || "").trim() || null,
-      budget: (budget || "").trim() || null,
-      project_type: (project_type || projectType || "").trim() || null,
+      message: (message || projectDetails || "").trim() || undefined,
+      budget: (budget || "").trim() || undefined,
+      project_type: (project_type || projectType || "").trim() || undefined,
       status: "New",
       source: source || "Website Form",
       ip_address: clientIp,
-      notes: notes || null,
-    });
+      notes: notes || undefined,
+    };
 
-    if (supabaseResult.success) {
+    // Save to local file store
+    let localSaved: any = null;
+    try {
+      localSaved = saveLocalBooking(bookingPayload);
+    } catch (err) {
+      console.warn("Could not save to local dbStore:", err);
+    }
+
+    // Also attempt saving to Supabase
+    try {
+      await saveBookingToSupabase({
+        ...bookingPayload,
+        phone: bookingPayload.phone || null,
+        business_name: bookingPayload.business_name || null,
+        message: bookingPayload.message || null,
+        budget: bookingPayload.budget || null,
+        project_type: bookingPayload.project_type || null,
+        notes: bookingPayload.notes || null,
+      });
+    } catch (supaErr) {
+      console.warn("Supabase background sync note:", supaErr);
+    }
+
+    return res.json({
+      success: true,
+      message: "Thank you! Your request has been received successfully. Our team will contact you shortly.",
+      booking: localSaved,
+    });
+  });
+
+  // API Route: Get All Bookings (Merges Supabase & Local Database)
+  app.get("/api/bookings", async (_req, res) => {
+    try {
+      const localBookings = getLocalBookings();
+      const supabaseResult = await getBookingsFromSupabase();
+      const supabaseList = supabaseResult.bookings || [];
+
+      // Combine bookings, deduplicating by ID or email+created_at
+      const map = new Map<string, any>();
+
+      // Put local bookings in map
+      localBookings.forEach((item) => {
+        map.set(item.id, item);
+      });
+
+      // Overlay supabase bookings
+      supabaseList.forEach((item: any) => {
+        const id = item.id ? String(item.id) : `sb-${item.email}-${item.created_at}`;
+        const existing = map.get(id);
+        map.set(id, {
+          id,
+          created_at: item.created_at || existing?.created_at || new Date().toISOString(),
+          createdAt: item.created_at || existing?.createdAt || new Date().toISOString(),
+          full_name: item.full_name || item.name || existing?.full_name || "Client",
+          name: item.full_name || item.name || existing?.name || "Client",
+          email: item.email || existing?.email || "",
+          phone: item.phone || existing?.phone || "",
+          business_name: item.business_name || item.businessName || existing?.business_name || "",
+          businessName: item.business_name || item.businessName || existing?.businessName || "",
+          service: item.service || existing?.service || "General Inquiry",
+          message: item.message || item.projectDetails || existing?.message || "",
+          projectDetails: item.message || item.projectDetails || existing?.projectDetails || "",
+          budget: item.budget || existing?.budget || "",
+          project_type: item.project_type || item.projectType || existing?.project_type || "",
+          projectType: item.project_type || item.projectType || existing?.projectType || "",
+          status: item.status || existing?.status || "New",
+          source: item.source || existing?.source || "Website Form",
+          ip_address: item.ip_address || existing?.ip_address || "",
+          notes: item.notes || existing?.notes || "",
+        });
+      });
+
+      const combined = Array.from(map.values()).sort((a, b) => {
+        const dateA = new Date(a.created_at || a.createdAt || 0).getTime();
+        const dateB = new Date(b.created_at || b.createdAt || 0).getTime();
+        return dateB - dateA;
+      });
+
       return res.json({
         success: true,
-        message: "Thank you! Your request has been received successfully. Our team will contact you shortly.",
+        bookings: combined,
       });
-    } else {
-      return res.status(500).json({
-        error: "Unable to complete request at this time. Please try again later or contact us directly.",
+    } catch (err: any) {
+      console.error("Fetch bookings error:", err);
+      const fallback = getLocalBookings();
+      return res.json({
+        success: true,
+        bookings: fallback,
       });
     }
   });
 
-  // API Route: Get All Bookings (Admin Panel)
-  app.get("/api/bookings", async (_req, res) => {
+  // API Route: Update Booking Status & Notes
+  app.put("/api/bookings/:id", (req, res) => {
     try {
-      const result = await getBookingsFromSupabase();
-      return res.json({
-        success: true,
-        bookings: result.bookings || [],
-      });
+      const { id } = req.params;
+      const { status, notes } = req.body;
+      const updated = updateLocalBookingStatus(id, status, notes);
+      return res.json({ success: true, updated });
     } catch (err: any) {
-      console.error("Fetch bookings error:", err);
-      return res.json({
-        success: true,
-        bookings: [],
-      });
+      console.error("Update booking error:", err);
+      return res.status(500).json({ error: "Failed to update booking" });
+    }
+  });
+
+  // API Route: Delete Booking
+  app.delete("/api/bookings/:id", (req, res) => {
+    try {
+      const { id } = req.params;
+      const deleted = deleteLocalBooking(id);
+      return res.json({ success: true, deleted });
+    } catch (err: any) {
+      console.error("Delete booking error:", err);
+      return res.status(500).json({ error: "Failed to delete booking" });
     }
   });
 

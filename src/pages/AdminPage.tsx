@@ -34,8 +34,20 @@ import {
   HelpCircle,
   Share2,
   BarChart2,
+  Inbox,
+  Mail,
+  Phone,
+  Building2,
+  DollarSign,
+  Briefcase,
+  MessageSquare,
+  Filter,
+  CheckCircle2,
+  Clock3,
+  Archive,
+  ChevronDown,
 } from "lucide-react";
-import { PortfolioItem, BlogPost } from "../types";
+import { PortfolioItem, BlogPost, BookingItem } from "../types";
 import { generateSlug, validateSlug, analyzeSEOHealth } from "../lib/seoUtils";
 
 interface AdminPageProps {
@@ -56,7 +68,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // Active Management Tab
-  const [activeTab, setActiveTab] = useState<"work" | "blogs">("work");
+  const [activeTab, setActiveTab] = useState<"work" | "blogs" | "bookings">("work");
 
   // Projects State
   const [projects, setProjects] = useState<PortfolioItem[]>([]);
@@ -72,16 +84,20 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   const [editingBlog, setEditingBlog] = useState<Partial<BlogPost> | null>(null);
   const [isBlogModalOpen, setIsBlogModalOpen] = useState(false);
 
-  // Bookings (Supabase) State
-  const [bookings, setBookings] = useState<any[]>([]);
+  // Bookings (Supabase & Inquiries) State
+  const [bookings, setBookings] = useState<BookingItem[]>([]);
   const [isLoadingBookings, setIsLoadingBookings] = useState(false);
   const [bookingSearch, setBookingSearch] = useState("");
+  const [bookingStatusFilter, setBookingStatusFilter] = useState<string>("all");
+  const [selectedBooking, setSelectedBooking] = useState<BookingItem | null>(null);
+  const [isBookingDetailsModalOpen, setIsBookingDetailsModalOpen] = useState(false);
+  const [updatingBookingId, setUpdatingBookingId] = useState<string | null>(null);
 
   // Common UI State
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
-  const [deletingType, setDeletingType] = useState<"project" | "blog" | null>(null);
+  const [deletingType, setDeletingType] = useState<"project" | "blog" | "booking" | null>(null);
 
   // PDF Upload & Management State
   const [isUploadingPdf, setIsUploadingPdf] = useState(false);
@@ -519,6 +535,57 @@ export const AdminPage: React.FC<AdminPageProps> = ({
     }
   };
 
+  // Update Booking Status & Notes
+  const handleUpdateBookingStatus = async (id: string, newStatus: string, updatedNotes?: string) => {
+    setUpdatingBookingId(id);
+    try {
+      const res = await fetch(`/api/bookings/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus, notes: updatedNotes }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(`Booking marked as ${newStatus}`);
+        setBookings((prev) =>
+          prev.map((b) => (b.id === id ? { ...b, status: newStatus, ...(updatedNotes !== undefined ? { notes: updatedNotes } : {}) } : b))
+        );
+        if (selectedBooking && selectedBooking.id === id) {
+          setSelectedBooking((prev) => (prev ? { ...prev, status: newStatus, ...(updatedNotes !== undefined ? { notes: updatedNotes } : {}) } : null));
+        }
+      } else {
+        alert(data.error || "Failed to update booking status.");
+      }
+    } catch (err: any) {
+      console.error("Update booking status error:", err);
+      showToast("Error updating booking status");
+    } finally {
+      setUpdatingBookingId(null);
+    }
+  };
+
+  // Delete Booking
+  const handleDeleteBooking = async (id: string) => {
+    try {
+      const res = await fetch(`/api/bookings/${id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) {
+        showToast("Booking inquiry removed.");
+        setDeletingItemId(null);
+        setDeletingType(null);
+        if (selectedBooking && selectedBooking.id === id) {
+          setIsBookingDetailsModalOpen(false);
+          setSelectedBooking(null);
+        }
+        setBookings((prev) => prev.filter((b) => b.id !== id));
+      } else {
+        alert(data.error || "Failed to delete booking.");
+      }
+    } catch (err) {
+      console.error("Delete booking error:", err);
+    }
+  };
+
   // Helper to open project form
   const openNewProjectModal = () => {
     setEditingProject({
@@ -703,7 +770,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
         
         {/* Navigation Tabs Header */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
-          <div className="flex items-center gap-2 bg-slate-900 p-1.5 rounded-2xl border border-slate-800">
+          <div className="flex flex-wrap items-center gap-2 bg-slate-900 p-1.5 rounded-2xl border border-slate-800">
             <button
               onClick={() => setActiveTab("work")}
               className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
@@ -732,6 +799,26 @@ export const AdminPage: React.FC<AdminPageProps> = ({
               <span className="bg-white/20 text-white text-[10px] px-2 py-0.5 rounded-full font-mono">
                 {blogs.length}
               </span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab("bookings")}
+              className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                activeTab === "bookings"
+                  ? "bg-[#2563EB] text-white shadow-blue-glow"
+                  : "text-slate-400 hover:text-white hover:bg-slate-800"
+              }`}
+            >
+              <Inbox className="w-4 h-4" />
+              <span>Bookings & Consultations</span>
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold ${
+                activeTab === "bookings" ? "bg-white/20 text-white" : "bg-blue-500/20 text-blue-400"
+              }`}>
+                {bookings.length}
+              </span>
+              {bookings.filter((b) => (b.status || "New").toLowerCase() === "new").length > 0 && (
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" title="New Inquiries Available" />
+              )}
             </button>
           </div>
 
@@ -1045,7 +1132,513 @@ export const AdminPage: React.FC<AdminPageProps> = ({
           </div>
         )}
 
+        {/* BOOKINGS & CONSULTATIONS VIEW */}
+        {activeTab === "bookings" && (
+          <div className="space-y-6">
+            
+            {/* Search, Filter & Action Bar */}
+            <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 bg-slate-900/80 p-4 sm:p-5 rounded-2xl border border-slate-800">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-slate-500 absolute left-4 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Search by client name, email, company, service or budget..."
+                  value={bookingSearch}
+                  onChange={(e) => setBookingSearch(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-11 pr-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#2563EB]"
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                {/* Status Filter Buttons */}
+                <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
+                  {["all", "New", "Contacted", "In Progress", "Completed"].map((status) => (
+                    <button
+                      key={status}
+                      onClick={() => setBookingStatusFilter(status)}
+                      className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                        bookingStatusFilter === status
+                          ? "bg-[#2563EB] text-white"
+                          : "text-slate-400 hover:text-white"
+                      }`}
+                    >
+                      {status === "all" ? "All Inquiries" : status}
+                    </button>
+                  ))}
+                </div>
+
+                <button
+                  onClick={fetchBookings}
+                  disabled={isLoadingBookings}
+                  className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl flex items-center gap-2 cursor-pointer transition-colors"
+                  title="Refresh bookings"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-blue-400 ${isLoadingBookings ? "animate-spin" : ""}`} />
+                  <span className="hidden sm:inline">Refresh</span>
+                </button>
+
+                <button
+                  onClick={sendTestBooking}
+                  disabled={isLoadingBookings}
+                  className="px-3.5 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 text-xs font-bold rounded-xl flex items-center gap-2 cursor-pointer transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Send Test Booking</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Metrics Bar */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 flex items-center gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center font-bold">
+                  <Inbox className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-xl font-heading font-black text-white">{bookings.length}</div>
+                  <div className="text-[11px] text-slate-400 font-medium">Total Inquiries</div>
+                </div>
+              </div>
+
+              <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 flex items-center gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center font-bold">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-xl font-heading font-black text-emerald-400">
+                    {bookings.filter((b) => (b.status || "New").toLowerCase() === "new").length}
+                  </div>
+                  <div className="text-[11px] text-slate-400 font-medium">New / Uncontacted</div>
+                </div>
+              </div>
+
+              <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 flex items-center gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center font-bold">
+                  <Clock3 className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-xl font-heading font-black text-amber-400">
+                    {bookings.filter((b) => ["contacted", "in progress"].includes((b.status || "").toLowerCase())).length}
+                  </div>
+                  <div className="text-[11px] text-slate-400 font-medium">In Pipeline</div>
+                </div>
+              </div>
+
+              <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 flex items-center gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center font-bold">
+                  <CheckCircle2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-xl font-heading font-black text-purple-400">
+                    {bookings.filter((b) => (b.status || "").toLowerCase() === "completed").length}
+                  </div>
+                  <div className="text-[11px] text-slate-400 font-medium">Converted / Done</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Bookings List */}
+            {isLoadingBookings ? (
+              <div className="p-12 text-center text-slate-400 bg-slate-900/40 rounded-3xl border border-slate-800/80 space-y-3">
+                <RefreshCw className="w-6 h-6 animate-spin mx-auto text-[#2563EB]" />
+                <p className="text-sm font-medium">Loading client bookings and consultations...</p>
+              </div>
+            ) : bookings.length === 0 ? (
+              <div className="p-12 text-center text-slate-400 bg-slate-900/40 rounded-3xl border border-slate-800/80 space-y-4">
+                <div className="w-12 h-12 rounded-2xl bg-blue-500/10 text-blue-400 flex items-center justify-center mx-auto">
+                  <Inbox className="w-6 h-6" />
+                </div>
+                <div className="space-y-1">
+                  <h4 className="font-heading font-bold text-white text-base">No consultation requests yet</h4>
+                  <p className="text-xs text-slate-400 max-w-md mx-auto">
+                    When visitors submit the "Book Consultation" form or audit requests on the website, they will automatically appear here with all contact & project details.
+                  </p>
+                </div>
+                <button
+                  onClick={sendTestBooking}
+                  className="px-5 py-2.5 bg-[#2563EB] hover:bg-blue-600 text-white font-bold text-xs rounded-xl shadow-blue-glow transition-all inline-flex items-center gap-2 cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Create Sample Test Booking</span>
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {bookings
+                  .filter((b) => {
+                    const matchSearch =
+                      (b.full_name || b.name || "").toLowerCase().includes(bookingSearch.toLowerCase()) ||
+                      (b.email || "").toLowerCase().includes(bookingSearch.toLowerCase()) ||
+                      (b.business_name || b.businessName || "").toLowerCase().includes(bookingSearch.toLowerCase()) ||
+                      (b.service || "").toLowerCase().includes(bookingSearch.toLowerCase()) ||
+                      (b.budget || "").toLowerCase().includes(bookingSearch.toLowerCase()) ||
+                      (b.message || b.projectDetails || "").toLowerCase().includes(bookingSearch.toLowerCase());
+
+                    if (bookingStatusFilter === "all") return matchSearch;
+                    return matchSearch && (b.status || "New").toLowerCase() === bookingStatusFilter.toLowerCase();
+                  })
+                  .map((booking) => {
+                    const clientName = booking.full_name || booking.name || "Anonymous Client";
+                    const business = booking.business_name || booking.businessName;
+                    const dateStr = booking.created_at || booking.createdAt;
+                    const formattedDate = dateStr
+                      ? new Date(dateStr).toLocaleString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
+                          hour: "numeric",
+                          minute: "2-digit",
+                        })
+                      : "Recently";
+
+                    const currentStatus = booking.status || "New";
+
+                    const getStatusBadge = (st: string) => {
+                      switch (st.toLowerCase()) {
+                        case "new":
+                          return "bg-emerald-500/10 text-emerald-400 border-emerald-500/30";
+                        case "contacted":
+                          return "bg-blue-500/10 text-blue-400 border-blue-500/30";
+                        case "in progress":
+                          return "bg-amber-500/10 text-amber-400 border-amber-500/30";
+                        case "completed":
+                          return "bg-purple-500/10 text-purple-400 border-purple-500/30";
+                        case "cancelled":
+                          return "bg-rose-500/10 text-rose-400 border-rose-500/30";
+                        default:
+                          return "bg-slate-800 text-slate-300 border-slate-700";
+                      }
+                    };
+
+                    return (
+                      <div
+                        key={booking.id}
+                        className="bg-slate-900/90 border border-slate-800/80 hover:border-slate-700/80 rounded-2xl p-5 transition-all flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5 group"
+                      >
+                        <div className="space-y-3 flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2.5">
+                            <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${getStatusBadge(currentStatus)}`}>
+                              {currentStatus}
+                            </span>
+                            {booking.service && (
+                              <span className="text-[10px] font-semibold bg-slate-800 text-blue-400 px-2.5 py-0.5 rounded-full border border-slate-700">
+                                {booking.service}
+                              </span>
+                            )}
+                            {booking.budget && (
+                              <span className="text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 px-2.5 py-0.5 rounded-full border border-emerald-500/20 flex items-center gap-1">
+                                <DollarSign className="w-3 h-3" />
+                                {booking.budget}
+                              </span>
+                            )}
+                            <span className="text-[11px] text-slate-500 font-mono ml-auto lg:ml-0">
+                              {formattedDate}
+                            </span>
+                          </div>
+
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h4 className="font-heading font-bold text-white text-base truncate">
+                                {clientName}
+                              </h4>
+                              {business && (
+                                <span className="text-xs text-slate-400 font-medium flex items-center gap-1">
+                                  <Building2 className="w-3.5 h-3.5 text-slate-500" />
+                                  {business}
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400 mt-1">
+                              {booking.email && (
+                                <a
+                                  href={`mailto:${booking.email}`}
+                                  className="text-[#2563EB] hover:underline flex items-center gap-1.5"
+                                >
+                                  <Mail className="w-3.5 h-3.5 text-blue-400" />
+                                  <span>{booking.email}</span>
+                                </a>
+                              )}
+                              {booking.phone && (
+                                <a
+                                  href={`tel:${booking.phone}`}
+                                  className="text-slate-300 hover:text-white flex items-center gap-1.5"
+                                >
+                                  <Phone className="w-3.5 h-3.5 text-emerald-400" />
+                                  <span>{booking.phone}</span>
+                                </a>
+                              )}
+                              {booking.source && (
+                                <span className="text-slate-500 text-[11px]">
+                                  Source: {booking.source}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {(booking.message || booking.projectDetails) && (
+                            <p className="text-xs text-slate-300 line-clamp-2 bg-slate-950/60 p-3 rounded-xl border border-slate-800/60 font-sans leading-relaxed">
+                              "{booking.message || booking.projectDetails}"
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Booking Quick Controls */}
+                        <div className="flex items-center flex-wrap gap-2.5 shrink-0 self-end lg:self-center">
+                          {/* Quick Status Dropdown */}
+                          <div className="relative">
+                            <select
+                              value={currentStatus}
+                              onChange={(e) => handleUpdateBookingStatus(booking.id, e.target.value)}
+                              disabled={updatingBookingId === booking.id}
+                              className="bg-slate-950 border border-slate-800 hover:border-slate-700 text-xs font-semibold text-slate-200 rounded-xl px-3 py-2 pr-8 focus:outline-none focus:border-[#2563EB] cursor-pointer appearance-none"
+                            >
+                              <option value="New">Status: New</option>
+                              <option value="Contacted">Status: Contacted</option>
+                              <option value="In Progress">Status: In Progress</option>
+                              <option value="Completed">Status: Completed</option>
+                              <option value="Cancelled">Status: Cancelled</option>
+                            </select>
+                            <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          </div>
+
+                          {/* View All Info Modal Button */}
+                          <button
+                            onClick={() => {
+                              setSelectedBooking(booking);
+                              setIsBookingDetailsModalOpen(true);
+                            }}
+                            className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl flex items-center gap-1.5 cursor-pointer transition-colors"
+                          >
+                            <Eye className="w-3.5 h-3.5 text-blue-400" />
+                            <span>View All Info</span>
+                          </button>
+
+                          {/* Delete Consultation */}
+                          <button
+                            onClick={() => {
+                              setDeletingItemId(booking.id);
+                              setDeletingType("booking");
+                            }}
+                            className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-colors cursor-pointer"
+                            title="Delete inquiry"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
+        )}
+
       </div>
+
+      {/* FULL BOOKING & CONSULTATION DETAILS MODAL */}
+      {isBookingDetailsModalOpen && selectedBooking && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl p-6 sm:p-8 space-y-6 my-auto">
+            
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-[#2563EB] flex items-center justify-center font-bold">
+                  <Inbox className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-heading font-extrabold text-lg text-white">
+                    Consultation & Booking Details
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Received on {selectedBooking.created_at || selectedBooking.createdAt ? new Date(selectedBooking.created_at || selectedBooking.createdAt || "").toLocaleString() : "Recent"}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsBookingDetailsModalOpen(false)}
+                className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Information Grid */}
+            <div className="space-y-6">
+              
+              {/* Client Info Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="bg-slate-950/80 border border-slate-800 p-4 rounded-2xl space-y-1">
+                  <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                    <User className="w-3.5 h-3.5 text-blue-400" />
+                    Client Full Name
+                  </div>
+                  <div className="text-sm font-semibold text-white">
+                    {selectedBooking.full_name || selectedBooking.name || "N/A"}
+                  </div>
+                </div>
+
+                <div className="bg-slate-950/80 border border-slate-800 p-4 rounded-2xl space-y-1">
+                  <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                    <Building2 className="w-3.5 h-3.5 text-blue-400" />
+                    Business / Company Name
+                  </div>
+                  <div className="text-sm font-semibold text-white">
+                    {selectedBooking.business_name || selectedBooking.businessName || "Not Provided"}
+                  </div>
+                </div>
+
+                <div className="bg-slate-950/80 border border-slate-800 p-4 rounded-2xl space-y-1">
+                  <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                    <Mail className="w-3.5 h-3.5 text-blue-400" />
+                    Email Address
+                  </div>
+                  <div className="text-sm font-semibold">
+                    <a
+                      href={`mailto:${selectedBooking.email}`}
+                      className="text-[#2563EB] hover:underline"
+                    >
+                      {selectedBooking.email}
+                    </a>
+                  </div>
+                </div>
+
+                <div className="bg-slate-950/80 border border-slate-800 p-4 rounded-2xl space-y-1">
+                  <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                    <Phone className="w-3.5 h-3.5 text-emerald-400" />
+                    Phone / Contact Number
+                  </div>
+                  <div className="text-sm font-semibold">
+                    {selectedBooking.phone ? (
+                      <a href={`tel:${selectedBooking.phone}`} className="text-slate-200 hover:underline">
+                        {selectedBooking.phone}
+                      </a>
+                    ) : (
+                      <span className="text-slate-500">Not Provided</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Project & Service Info */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="bg-slate-950/80 border border-slate-800 p-4 rounded-2xl space-y-1">
+                  <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                    <Briefcase className="w-3.5 h-3.5 text-blue-400" />
+                    Requested Service
+                  </div>
+                  <div className="text-xs font-semibold text-slate-200">
+                    {selectedBooking.service || "General Consultation"}
+                  </div>
+                </div>
+
+                <div className="bg-slate-950/80 border border-slate-800 p-4 rounded-2xl space-y-1">
+                  <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                    <DollarSign className="w-3.5 h-3.5 text-emerald-400" />
+                    Budget Range
+                  </div>
+                  <div className="text-xs font-semibold text-emerald-400">
+                    {selectedBooking.budget || "Not Specified"}
+                  </div>
+                </div>
+
+                <div className="bg-slate-950/80 border border-slate-800 p-4 rounded-2xl space-y-1">
+                  <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                    <Tag className="w-3.5 h-3.5 text-amber-400" />
+                    Project Type
+                  </div>
+                  <div className="text-xs font-semibold text-slate-200">
+                    {selectedBooking.project_type || selectedBooking.projectType || "New Build"}
+                  </div>
+                </div>
+              </div>
+
+              {/* Client Message / Project Scope Details */}
+              <div className="bg-slate-950/80 border border-slate-800 p-5 rounded-2xl space-y-2">
+                <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <MessageSquare className="w-3.5 h-3.5 text-blue-400" />
+                  Client Project Scope & Message
+                </div>
+                <div className="text-xs text-slate-200 leading-relaxed whitespace-pre-wrap font-sans bg-slate-900/80 p-4 rounded-xl border border-slate-800">
+                  {selectedBooking.message || selectedBooking.projectDetails || "No additional message provided."}
+                </div>
+              </div>
+
+              {/* Status Update & Internal Notes */}
+              <div className="bg-slate-950/80 border border-slate-800 p-5 rounded-2xl space-y-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div>
+                    <h5 className="text-xs font-bold text-white uppercase tracking-wider">
+                      Manage Inquiry Status
+                    </h5>
+                    <p className="text-[11px] text-slate-400">
+                      Update lead progress status as you communicate with this client.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {["New", "Contacted", "In Progress", "Completed", "Cancelled"].map((st) => (
+                      <button
+                        key={st}
+                        onClick={() => handleUpdateBookingStatus(selectedBooking.id, st)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                          (selectedBooking.status || "New").toLowerCase() === st.toLowerCase()
+                            ? "bg-[#2563EB] text-white shadow-blue-glow"
+                            : "bg-slate-800 text-slate-400 hover:text-white"
+                        }`}
+                      >
+                        {st}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Metadata */}
+              <div className="flex flex-wrap items-center justify-between text-[11px] text-slate-500 pt-2 border-t border-slate-800/80">
+                <span>Inquiry ID: <code className="text-slate-400">{selectedBooking.id}</code></span>
+                {selectedBooking.source && <span>Lead Source: {selectedBooking.source}</span>}
+                {selectedBooking.ip_address && <span>IP Address: {selectedBooking.ip_address}</span>}
+              </div>
+
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-between pt-4 border-t border-slate-800">
+              <button
+                onClick={() => {
+                  setDeletingItemId(selectedBooking.id);
+                  setDeletingType("booking");
+                }}
+                className="px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-semibold rounded-xl flex items-center gap-1.5 cursor-pointer transition-colors"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete Inquiry</span>
+              </button>
+
+              <div className="flex items-center gap-3">
+                {selectedBooking.email && (
+                  <a
+                    href={`mailto:${selectedBooking.email}?subject=Calvix Digitals Consultation follow-up`}
+                    className="px-4 py-2.5 bg-[#2563EB] hover:bg-blue-600 text-white font-bold text-xs rounded-xl shadow-blue-glow transition-all flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Mail className="w-3.5 h-3.5" />
+                    <span>Reply via Email</span>
+                  </a>
+                )}
+                <button
+                  onClick={() => setIsBookingDetailsModalOpen(false)}
+                  className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
 
       {/* PROJECT EDITOR MODAL */}
       {isProjectModalOpen && editingProject && (
@@ -2166,7 +2759,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
               Confirm Permanent Deletion?
             </h4>
             <p className="text-slate-400 text-xs leading-relaxed">
-              Are you sure you want to delete this {deletingType === "project" ? "project" : "blog post"} from the database? This action cannot be undone.
+              Are you sure you want to delete this {deletingType === "project" ? "project" : deletingType === "blog" ? "blog post" : "booking inquiry"} from the database? This action cannot be undone.
             </p>
             <div className="flex items-center justify-center gap-3 pt-2">
               <button
@@ -2180,8 +2773,10 @@ export const AdminPage: React.FC<AdminPageProps> = ({
               </button>
               <button
                 onClick={() => {
+                  if (!deletingItemId) return;
                   if (deletingType === "project") handleDeleteProject(deletingItemId);
                   else if (deletingType === "blog") handleDeleteBlog(deletingItemId);
+                  else if (deletingType === "booking") handleDeleteBooking(deletingItemId);
                 }}
                 className="px-5 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-bold cursor-pointer"
               >

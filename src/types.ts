@@ -127,3 +127,25 @@ export interface IndustryItem {
   description: string;
   keyFeature: string;
 }
+
+export interface BookingItem {
+  id: string;
+  created_at?: string;
+  createdAt?: string;
+  full_name: string;
+  name?: string;
+  email: string;
+  phone?: string;
+  business_name?: string;
+  businessName?: string;
+  service?: string;
+  message?: string;
+  projectDetails?: string;
+  budget?: string;
+  project_type?: string;
+  projectType?: string;
+  status?: "New" | "Contacted" | "In Progress" | "Completed" | "Cancelled" | string;
+  source?: string;
+  ip_address?: string;
+  notes?: string;
+}
